@@ -1,0 +1,99 @@
+.memo-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 9999;
+}
+
+.memo-modal-content {
+  background-color: white;
+  padding: 20px;
+  border-radius: 8px;
+  width: 400px;
+  max-width: 90%;
+}
+
+.memo-modal-content h3 {
+  margin-top: 0;
+  margin-bottom: 15px;
+}
+
+.memo-modal-content textarea {
+  width: 100%;
+  height: 100px;
+  margin-bottom: 15px;
+  padding: 8px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  resize: vertical;
+}
+
+.memo-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.memo-buttons button {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.memo-buttons button#saveMemo {
+  background-color: #4CAF50;
+  color: white;
+}
+
+.memo-buttons button#cancelMemo {
+  background-color: #f44336;
+  color: white;
+}
+
+.has-memo {
+  position: relative;
+  border: 2px solid #ffd700;
+  padding: 5px;
+  margin: 5px 0;
+}
+
+.memo-badge {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  background-color: #ffd700;
+  color: black;
+  padding: 2px 6px;
+  border-radius: 12px;
+  font-size: 12px;
+  cursor: help;
+}
+
+/* 보배드림 컨텍스트 메뉴 스타일 */
+.memo-button {
+  display: block;
+  padding: 8px 12px;
+  color: #333;
+  text-decoration: none;
+  font-size: 12px;
+  line-height: 1.4;
+  border-bottom: 1px solid #eee;
+}
+
+.memo-button:hover {
+  background-color: #f5f5f5;
+  color: #000;
+}
+
+/* 메모 버튼 아이콘 */
+.memo-button::before {
+  content: '📝';
+  margin-right: 5px;
+} 

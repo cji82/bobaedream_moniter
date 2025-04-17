@@ -1,0 +1,21 @@
+{
+  "manifest_version": 3,
+  "name": "보배드림 메모 확장",
+  "version": "1.0",
+  "description": "보배드림 사용자 메모 기능",
+  "permissions": [
+    "storage",
+    "activeTab"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["https://www.bobaedream.co.kr/*"],
+      "js": ["content.js"],
+      "css": ["styles.css"]
+    }
+  ],
+  "icons": {
+    "48": "icon48.png",
+    "128": "icon128.png"
+  }
+} 
