@@ -94,6 +94,27 @@ function addMemoButton(userId, userName) {
 
       // 이미 메모 버튼이 있는지 확인
       if (!menuList.querySelector('.memo-button')) {
+        // 기존 메뉴 아이템 저장
+        const existingItems = Array.from(menuList.children);
+        
+        // 메뉴 리스트 초기화 방지
+        if (existingItems.length === 3) {
+          // 회원차단 메뉴 아이템 생성
+          const blockItem = document.createElement('li');
+          const blockLink = document.createElement('a');
+          blockLink.href = '#';
+          blockLink.className = 'submenu_item';
+          blockLink.textContent = '회원차단';
+          blockLink.onclick = function(e) {
+            e.preventDefault();
+            if (typeof user_block === 'function') {
+              user_block(userId);
+            }
+          };
+          blockItem.appendChild(blockLink);
+          menuList.appendChild(blockItem);
+        }
+
         const menuItem = document.createElement('li');
         const memoButton = document.createElement('a');
         memoButton.href = '#';
@@ -223,6 +244,53 @@ function highlightUserPosts(userId) {
   });
 }
 
+// MutationObserver를 사용하여 동적으로 추가되는 컨텍스트 메뉴 감지
+const observer = new MutationObserver((mutations) => {
+  mutations.forEach((mutation) => {
+    if (mutation.addedNodes.length) {
+      mutation.addedNodes.forEach((node) => {
+        if (node.id === 'submenusel') {
+          console.log('submenusel 메뉴 감지됨');
+          
+          // 메뉴 리스트 확인
+          const menuList = node.querySelector('ol');
+          if (!menuList) return;
+
+          // 회원차단 메뉴가 없으면 추가
+          if (!menuList.querySelector('.submenu_item')) {
+            // 클릭된 링크 찾기
+            const clickedLink = document.querySelector('span.author[data-clicked="true"]');
+            if (clickedLink) {
+              const onclick = clickedLink.getAttribute('onclick');
+              if (onclick) {
+                const match = onclick.match(/submenu_show\('([^']+)','([^']+)'\)/);
+                if (match) {
+                  const userId = match[1];
+                  
+                  // 회원차단 메뉴 아이템 생성
+                  const blockItem = document.createElement('li');
+                  const blockLink = document.createElement('a');
+                  blockLink.href = '#';
+                  blockLink.className = 'submenu_item';
+                  blockLink.textContent = '회원차단';
+                  blockLink.onclick = function(e) {
+                    e.preventDefault();
+                    if (typeof user_block === 'function') {
+                      user_block(userId);
+                    }
+                  };
+                  blockItem.appendChild(blockLink);
+                  menuList.appendChild(blockItem);
+                }
+              }
+            }
+          }
+        }
+      });
+    }
+  });
+});
+
 // 사용자 링크 클릭 이벤트 감지
 function handleUserLinkClick(e) {
   console.log('클릭 이벤트 발생');
@@ -234,6 +302,15 @@ function handleUserLinkClick(e) {
   }
   
   if (!target) return;
+  
+  // 이전에 클릭된 요소의 data-clicked 속성 제거
+  const prevClicked = document.querySelector('span.author[data-clicked="true"]');
+  if (prevClicked) {
+    prevClicked.removeAttribute('data-clicked');
+  }
+  
+  // 현재 클릭된 요소에 data-clicked 속성 추가
+  target.setAttribute('data-clicked', 'true');
   
   console.log('클릭된 요소:', target);
   console.log('onclick 속성:', target.getAttribute('onclick'));
@@ -266,33 +343,6 @@ document.addEventListener('DOMContentLoaded', () => {
       highlightUserPosts(memo.userId);
     });
   };
-});
-
-// MutationObserver를 사용하여 동적으로 추가되는 컨텍스트 메뉴 감지
-const observer = new MutationObserver((mutations) => {
-  mutations.forEach((mutation) => {
-    if (mutation.addedNodes.length) {
-      mutation.addedNodes.forEach((node) => {
-        if (node.id === 'submenusel') {
-          console.log('submenusel 메뉴 감지됨');
-          // 메뉴가 나타날 때 클릭된 링크를 찾기
-          const clickedLinks = document.querySelectorAll('span.author');
-          clickedLinks.forEach(link => {
-            const onclick = link.getAttribute('onclick');
-            if (onclick && onclick.includes('submenu_show')) {
-              const match = onclick.match(/submenu_show\('([^']+)','([^']+)'\)/);
-              if (match) {
-                const userId = match[1];
-                const userName = match[2];
-                console.log('메뉴에서 사용자 정보 추출:', userId, userName);
-                addMemoButton(userId, userName);
-              }
-            }
-          });
-        }
-      });
-    }
-  });
 });
 
 // DOM 변경 감지 시작
