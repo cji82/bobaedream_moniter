@@ -311,6 +311,7 @@ const observer = new MutationObserver((mutations) => {
                   
                   // 회원차단 메뉴 아이템 생성
                   const blockItem = document.createElement('li');
+                        blockItem.setAttribute("style","width:130px;text-align:left;margin:5px 0px;padding-left:10px;color:4c4c4c;");
                   const blockLink = document.createElement('a');
                   blockLink.href = '#';
                   blockLink.className = 'submenu_item';
