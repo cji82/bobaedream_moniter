@@ -235,6 +235,10 @@ function highlightUserPosts(userId) {
             number = post.querySelector('td:nth-child(1)')?.textContent?.trim();
             titleCell = post.querySelector('td:nth-child(2)');
             nic = post.querySelector('td:nth-child(3) span.author')?.textContent?.trim();
+          }else{
+            number = post.querySelector('td:nth-child(1)')?.textContent?.trim();
+            titleCell = post.querySelector('td:nth-child(2)');
+            nic = post.querySelector('td:nth-child(3) span.author')?.textContent?.trim();            
           }
           
           if (titleCell) {
