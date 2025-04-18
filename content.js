@@ -201,7 +201,7 @@ function highlightUserPosts(userId) {
         const result = event.target.result;
         if (result) {
           console.log('메모 찾음:', result.memo);
-          const titleCell = post.querySelector('td.pl14');
+          const titleCell = post.querySelector('td:nth-child(2)');//||post.querySelector('#boardlist > tbody > tr > td:nth-child(2)');
           if (titleCell) {
             // 취소선 클래스 추가
             titleCell.classList.add('has-memo-title');
@@ -222,13 +222,17 @@ function highlightUserPosts(userId) {
                 e.preventDefault();
                 e.stopPropagation();
                 
-                const number = post.querySelector('td.num01')?.textContent?.trim();
-                const sbj = titleCell.querySelector('a')?.getAttribute('title') || titleCell.querySelector('a')?.textContent?.trim();
+                const number = post.querySelector('td:nth-child(1)')?.textContent?.trim();
+                const sbj = titleCell.querySelector('a')?.getAttribute('title') || titleCell.querySelector('a')?.textContent?.trim() || titleCell.querySelector("strong")?.textContent?.trim();
                 const nic = userLink.getAttribute('title') || userLink.textContent.trim();
                 
                 if (number && sbj && nic) {
-                  const url = `/board/bulletin/report_info.php?gubun=본문&code=strange&number=${number}&title=${encodeURIComponent(sbj)}&nic=${encodeURIComponent(nic)}`;
-                  window.open(url, '', 'width=525,height=575');
+                  if(number === '현재글') {
+                    document.querySelector("#conView > div > div > div.docuArea02 > div.docuCont03 > div.socialArea02 > div.select_pop > ul > li:nth-child(1) > a").click();
+                  }else{
+                    const url = `/board/bulletin/report_info.php?gubun=본문&code=strange&number=${number}&title=${encodeURIComponent(sbj)}&nic=${encodeURIComponent(nic)}`;
+                    window.open(url, '', 'width=525,height=575');
+                  }
                 }
               };
 
