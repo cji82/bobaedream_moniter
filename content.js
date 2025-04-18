@@ -63,6 +63,9 @@ style.textContent = `
   .has-memo-title a {
     text-decoration: line-through !important;
   }
+  .has-memo-title strong{
+    text-decoration: line-through !important;
+  }
   .report-button {
     display: inline-block;
     margin-right: 5px;
@@ -190,6 +193,8 @@ function showMemoModal(userId, userName) {
 function highlightUserPosts(userId) {
   console.log('게시물 하이라이트 시도:', userId);
   const posts = document.querySelectorAll('#boardlist > tbody > tr');
+  const currentUrl = window.location.href;
+  
   posts.forEach(post => {
     const userLink = post.querySelector('span.author');
     if (userLink && userLink.getAttribute('onclick')?.includes(userId)) {
@@ -201,7 +206,37 @@ function highlightUserPosts(userId) {
         const result = event.target.result;
         if (result) {
           console.log('메모 찾음:', result.memo);
-          const titleCell = post.querySelector('td:nth-child(2)');//||post.querySelector('#boardlist > tbody > tr > td:nth-child(2)');
+          let titleCell, number, sbj, nic;
+          
+          if (currentUrl.includes('view?code=best')) {
+            // view?code=best: 첫번째셀 게시물번호, 세번째셀 타이틀, 네번째셀 사용자별명
+            number = post.querySelector('td:nth-child(1)')?.textContent?.trim();
+            titleCell = post.querySelector('td:nth-child(3)');
+            nic = post.querySelector('td:nth-child(4) span.author')?.textContent?.trim();
+          } else if (currentUrl.includes('view?code=strange')) {
+            // view?code=strange: 첫번째셀 게시물번호, 두번째셀 타이틀, 세번째셀 사용자별명
+            number = post.querySelector('td:nth-child(1)')?.textContent?.trim();
+            titleCell = post.querySelector('td:nth-child(2)');
+            nic = post.querySelector('td:nth-child(3) span.author')?.textContent?.trim();
+          } else if (currentUrl.includes('list?code=best')) {
+            // list?code=best: 두번째셀 타이틀, 세번째셀 사용자별명, 두번째셀 a태그의 href에서 No 추출
+            titleCell = post.querySelector('td:nth-child(2)');
+            nic = post.querySelector('td:nth-child(3) span.author')?.textContent?.trim();
+            const titleLink = titleCell.querySelector('a');
+            if (titleLink) {
+              const href = titleLink.getAttribute('href');
+              const match = href.match(/No=(\d+)/);
+              if (match) {
+                number = match[1];
+              }
+            }
+          } else if (currentUrl.includes('list?code=strange')) {
+            // list?code=strange: 첫번째셀 게시물번호, 두번째셀 타이틀, 세번째셀 사용자별명
+            number = post.querySelector('td:nth-child(1)')?.textContent?.trim();
+            titleCell = post.querySelector('td:nth-child(2)');
+            nic = post.querySelector('td:nth-child(3) span.author')?.textContent?.trim();
+          }
+          
           if (titleCell) {
             // 취소선 클래스 추가
             titleCell.classList.add('has-memo-title');
@@ -222,17 +257,16 @@ function highlightUserPosts(userId) {
                 e.preventDefault();
                 e.stopPropagation();
                 
-                const number = post.querySelector('td:nth-child(1)')?.textContent?.trim();
-                const sbj = titleCell.querySelector('a')?.getAttribute('title') || titleCell.querySelector('a')?.textContent?.trim() || titleCell.querySelector("strong")?.textContent?.trim();
-                const nic = userLink.getAttribute('title') || userLink.textContent.trim();
+                // view 상태이고 number가 "현재글"일 때만 strong 태그의 텍스트를 사용
+                if (currentUrl.includes('view') && number === '현재글') {
+                  sbj = titleCell.querySelector('strong')?.textContent?.trim();
+                } else {
+                  sbj = titleCell.querySelector('a')?.getAttribute('title') || titleCell.querySelector('a')?.textContent?.trim();
+                }
                 
                 if (number && sbj && nic) {
-                  if(number === '현재글') {
-                    document.querySelector("#conView > div > div > div.docuArea02 > div.docuCont03 > div.socialArea02 > div.select_pop > ul > li:nth-child(1) > a").click();
-                  }else{
-                    const url = `/board/bulletin/report_info.php?gubun=본문&code=strange&number=${number}&title=${encodeURIComponent(sbj)}&nic=${encodeURIComponent(nic)}`;
-                    window.open(url, '', 'width=525,height=575');
-                  }
+                  const url = `/board/bulletin/report_info.php?gubun=본문&code=strange&number=${number}&title=${encodeURIComponent(sbj)}&nic=${encodeURIComponent(nic)}`;
+                  window.open(url, '', 'width=525,height=575');
                 }
               };
 
