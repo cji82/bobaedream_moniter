@@ -1,24 +1,183 @@
-// 사용자 메모를 저장할 IndexedDB 데이터베이스 생성
-let db;
-const request = indexedDB.open('bobaeMemoDB', 1);
-
-request.onerror = (event) => {
-  console.error('데이터베이스 오류:', event.target.error);
-};
-
-request.onsuccess = (event) => {
-  db = event.target.result;
-  console.log('데이터베이스 연결 성공');
+// 사용자 메모를 저장할 chrome.storage.local 사용
+function saveMemo(userId, userName, memo) {
+  console.log('메모 저장 시도:', userId, userName, memo);
   
-  // 데이터베이스 연결 후 즉시 메모 체크
-  checkAllMemos();
-};
+  chrome.storage.local.get('memos', (result) => {
+    const memos = result.memos || {};
+    const currentMemo = memos[userId];
+    
+    // 기존 메모가 있고 별명이 변경된 경우
+    if (currentMemo && currentMemo.nickname !== userName) {
+      const oldNickname = currentMemo.nickname;
+      const timestamp = new Date().toLocaleString();
+      const nameChangeHistory = `\n\n[${timestamp}] 별명 변경: ${oldNickname} > ${userName}`;
+      
+      memos[userId] = {
+        nickname: userName,
+        memo: currentMemo.memo + nameChangeHistory
+      };
+    } else {
+      memos[userId] = {
+        nickname: userName,
+        memo: memo
+      };
+    }
+    
+    chrome.storage.local.set({ memos }, () => {
+      console.log('메모 저장 완료:', memos);
+      highlightUserPosts(userId);
+    });
+  });
+}
 
-request.onupgradeneeded = (event) => {
-  const db = event.target.result;
-  const store = db.createObjectStore('memos', { keyPath: 'userId' });
-  store.createIndex('memo', 'memo', { unique: false });
-};
+// 메모 모달 표시
+function showMemoModal(userId, userName) {
+  const modal = document.createElement('div');
+  modal.className = 'memo-modal';
+  modal.innerHTML = `
+    <div class="memo-modal-content">
+      <h3>${userName}님의 메모</h3>
+      <textarea id="memoText" placeholder="메모를 입력하세요"></textarea>
+      <div class="memo-buttons">
+        <button id="saveMemo">저장</button>
+        <button id="cancelMemo">취소</button>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(modal);
+
+  // 기존 메모 불러오기
+  chrome.storage.local.get('memos', (result) => {
+    const memos = result.memos || {};
+    if (memos[userId]) {
+      document.getElementById('memoText').value = memos[userId].memo;
+    }
+  });
+
+  // 저장 버튼 이벤트
+  document.getElementById('saveMemo').onclick = () => {
+    const memo = document.getElementById('memoText').value;
+    saveMemo(userId, userName, memo);
+    document.body.removeChild(modal);
+  };
+
+  // 취소 버튼 이벤트
+  document.getElementById('cancelMemo').onclick = () => {
+    document.body.removeChild(modal);
+  };
+}
+
+// 메모가 있는 사용자의 게시물 강조 표시
+function highlightUserPosts(userId) {
+  console.log('게시물 하이라이트 시도:', userId);
+  const posts = document.querySelectorAll('#boardlist > tbody > tr');
+  const currentUrl = window.location.href;
+  
+  chrome.storage.local.get('memos', (result) => {
+    const memos = result.memos || {};
+    const memoData = memos[userId];
+    
+    if (memoData) {
+      posts.forEach(post => {
+        const userLink = post.querySelector('span.author');
+        if (userLink) {
+          const onclick = userLink.getAttribute('onclick');
+          if (onclick) {
+            const match = onclick.match(/submenu_show\('([^']+)','([^']+)'\)/);
+            if (match && match[1] === userId) {
+              let titleCell, number, sbj, nic;
+              
+              if (currentUrl.includes('view?code=best')) {
+                number = post.querySelector('td:nth-child(1)')?.textContent?.trim();
+                titleCell = post.querySelector('td:nth-child(3)');
+                nic = post.querySelector('td:nth-child(4) span.author')?.textContent?.trim();
+              } else if (currentUrl.includes('view?code=strange')) {
+                number = post.querySelector('td:nth-child(1)')?.textContent?.trim();
+                titleCell = post.querySelector('td:nth-child(2)');
+                nic = post.querySelector('td:nth-child(3) span.author')?.textContent?.trim();
+              } else if (currentUrl.includes('list?code=best')) {
+                titleCell = post.querySelector('td:nth-child(2)');
+                nic = post.querySelector('td:nth-child(3) span.author')?.textContent?.trim();
+                const titleLink = titleCell.querySelector('a');
+                if (titleLink) {
+                  const href = titleLink.getAttribute('href');
+                  const match = href.match(/No=(\d+)/);
+                  if (match) {
+                    number = match[1];
+                  }
+                }
+              } else if (currentUrl.includes('list?code=strange')) {
+                number = post.querySelector('td:nth-child(1)')?.textContent?.trim();
+                titleCell = post.querySelector('td:nth-child(2)');
+                nic = post.querySelector('td:nth-child(3) span.author')?.textContent?.trim();
+              } else {
+                number = post.querySelector('td:nth-child(1)')?.textContent?.trim();
+                titleCell = post.querySelector('td:nth-child(2)');
+                nic = post.querySelector('td:nth-child(3) span.author')?.textContent?.trim();
+              }
+              
+              if (titleCell) {
+                titleCell.classList.add('has-memo-title');
+                
+                if (!titleCell.querySelector('.memo-indicator')) {
+                  const container = document.createElement('span');
+                  container.style.marginRight = '5px';
+
+                  const memoIndicator = document.createElement('span');
+                  memoIndicator.className = 'memo-indicator';
+                  memoIndicator.innerHTML = `📝 <span class="memo-tooltip">${memoData.memo}</span>`;
+                  
+                  const reportButton = document.createElement('span');
+                  reportButton.className = 'report-button';
+                  reportButton.innerHTML = '🚨';
+                  reportButton.onclick = (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    
+                    if (currentUrl.includes('view') && number === '현재글') {
+                      sbj = titleCell.querySelector('strong')?.textContent?.trim();
+                    } else {
+                      sbj = titleCell.querySelector('a')?.getAttribute('title') || titleCell.querySelector('a')?.textContent?.trim();
+                    }
+                    
+                    if (number && sbj && nic) {
+                      const url = `/board/bulletin/report_info.php?gubun=본문&code=strange&number=${number}&title=${encodeURIComponent(sbj)}&nic=${encodeURIComponent(nic)}`;
+                      window.open(url, '', 'width=525,height=575');
+                    }
+                  };
+
+                  container.appendChild(memoIndicator);
+                  container.appendChild(reportButton);
+                  titleCell.insertBefore(container, titleCell.firstChild);
+                }
+              }
+            }
+          }
+        }
+      });
+    }
+  });
+}
+
+// 페이지 로드 시 메모가 있는 게시물 강조 표시
+document.addEventListener('DOMContentLoaded', () => {
+  console.log('DOMContentLoaded 이벤트 발생');
+  checkAllMemos();
+  observePageChanges();
+});
+
+// 모든 메모를 체크하고 표시하는 함수
+function checkAllMemos() {
+  console.log('모든 메모 체크 시작');
+  chrome.storage.local.get('memos', (result) => {
+    const memos = result.memos || {};
+    console.log('찾은 메모:', memos);
+    Object.keys(memos).forEach(userId => {
+      highlightUserPosts(userId);
+    });
+  });
+}
 
 // CSS 스타일 추가
 const style = document.createElement('style');
@@ -104,6 +263,7 @@ function addMemoButton(userId, userName) {
         if (existingItems.length === 3) {
           // 회원차단 메뉴 아이템 생성
           const blockItem = document.createElement('li');
+                blockItem.setAttribute("style","width:130px;text-align:left;margin:5px 0px;padding-left:10px;color:4c4c4c;");
           const blockLink = document.createElement('a');
           blockLink.href = '#';
           blockLink.className = 'submenu_item';
@@ -143,147 +303,6 @@ function addMemoButton(userId, userName) {
       }
     }
   }, 100);
-}
-
-// 메모 모달 표시
-function showMemoModal(userId, userName) {
-  const modal = document.createElement('div');
-  modal.className = 'memo-modal';
-  modal.innerHTML = `
-    <div class="memo-modal-content">
-      <h3>${userName}님의 메모</h3>
-      <textarea id="memoText" placeholder="메모를 입력하세요"></textarea>
-      <div class="memo-buttons">
-        <button id="saveMemo">저장</button>
-        <button id="cancelMemo">취소</button>
-      </div>
-    </div>
-  `;
-
-  document.body.appendChild(modal);
-
-  // 기존 메모 불러오기
-  const transaction = db.transaction(['memos'], 'readonly');
-  const store = transaction.objectStore('memos');
-  const request = store.get(userId);
-
-  request.onsuccess = (event) => {
-    if (event.target.result) {
-      document.getElementById('memoText').value = event.target.result.memo;
-    }
-  };
-
-  // 저장 버튼 이벤트
-  document.getElementById('saveMemo').onclick = () => {
-    const memo = document.getElementById('memoText').value;
-    const transaction = db.transaction(['memos'], 'readwrite');
-    const store = transaction.objectStore('memos');
-    store.put({ userId, memo });
-    document.body.removeChild(modal);
-    highlightUserPosts(userId);
-  };
-
-  // 취소 버튼 이벤트
-  document.getElementById('cancelMemo').onclick = () => {
-    document.body.removeChild(modal);
-  };
-}
-
-// 메모가 있는 사용자의 게시물 강조 표시
-function highlightUserPosts(userId) {
-  console.log('게시물 하이라이트 시도:', userId);
-  const posts = document.querySelectorAll('#boardlist > tbody > tr');
-  const currentUrl = window.location.href;
-  
-  posts.forEach(post => {
-    const userLink = post.querySelector('span.author');
-    if (userLink && userLink.getAttribute('onclick')?.includes(userId)) {
-      const transaction = db.transaction(['memos'], 'readonly');
-      const store = transaction.objectStore('memos');
-      const request = store.get(userId);
-
-      request.onsuccess = (event) => {
-        const result = event.target.result;
-        if (result) {
-          console.log('메모 찾음:', result.memo);
-          let titleCell, number, sbj, nic;
-          
-          if (currentUrl.includes('view?code=best')) {
-            // view?code=best: 첫번째셀 게시물번호, 세번째셀 타이틀, 네번째셀 사용자별명
-            number = post.querySelector('td:nth-child(1)')?.textContent?.trim();
-            titleCell = post.querySelector('td:nth-child(3)');
-            nic = post.querySelector('td:nth-child(4) span.author')?.textContent?.trim();
-          } else if (currentUrl.includes('view?code=strange')) {
-            // view?code=strange: 첫번째셀 게시물번호, 두번째셀 타이틀, 세번째셀 사용자별명
-            number = post.querySelector('td:nth-child(1)')?.textContent?.trim();
-            titleCell = post.querySelector('td:nth-child(2)');
-            nic = post.querySelector('td:nth-child(3) span.author')?.textContent?.trim();
-          } else if (currentUrl.includes('list?code=best')) {
-            // list?code=best: 두번째셀 타이틀, 세번째셀 사용자별명, 두번째셀 a태그의 href에서 No 추출
-            titleCell = post.querySelector('td:nth-child(2)');
-            nic = post.querySelector('td:nth-child(3) span.author')?.textContent?.trim();
-            const titleLink = titleCell.querySelector('a');
-            if (titleLink) {
-              const href = titleLink.getAttribute('href');
-              const match = href.match(/No=(\d+)/);
-              if (match) {
-                number = match[1];
-              }
-            }
-          } else if (currentUrl.includes('list?code=strange')) {
-            // list?code=strange: 첫번째셀 게시물번호, 두번째셀 타이틀, 세번째셀 사용자별명
-            number = post.querySelector('td:nth-child(1)')?.textContent?.trim();
-            titleCell = post.querySelector('td:nth-child(2)');
-            nic = post.querySelector('td:nth-child(3) span.author')?.textContent?.trim();
-          }else{
-            number = post.querySelector('td:nth-child(1)')?.textContent?.trim();
-            titleCell = post.querySelector('td:nth-child(2)');
-            nic = post.querySelector('td:nth-child(3) span.author')?.textContent?.trim();            
-          }
-          
-          if (titleCell) {
-            // 취소선 클래스 추가
-            titleCell.classList.add('has-memo-title');
-            
-            // 이미 추가된 메모 아이콘이 있는지 확인
-            if (!titleCell.querySelector('.memo-indicator')) {
-              const container = document.createElement('span');
-              container.style.marginRight = '5px';
-
-              const memoIndicator = document.createElement('span');
-              memoIndicator.className = 'memo-indicator';
-              memoIndicator.innerHTML = `📝 <span class="memo-tooltip">${result.memo}</span>`;
-              
-              const reportButton = document.createElement('span');
-              reportButton.className = 'report-button';
-              reportButton.innerHTML = '🚨';
-              reportButton.onclick = (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                
-                // view 상태이고 number가 "현재글"일 때만 strong 태그의 텍스트를 사용
-                if (currentUrl.includes('view') && number === '현재글') {
-                  sbj = titleCell.querySelector('strong')?.textContent?.trim();
-                } else {
-                  sbj = titleCell.querySelector('a')?.getAttribute('title') || titleCell.querySelector('a')?.textContent?.trim();
-                }
-                
-                if (number && sbj && nic) {
-                  const url = `/board/bulletin/report_info.php?gubun=본문&code=strange&number=${number}&title=${encodeURIComponent(sbj)}&nic=${encodeURIComponent(nic)}`;
-                  window.open(url, '', 'width=525,height=575');
-                }
-              };
-
-              container.appendChild(memoIndicator);
-              container.appendChild(reportButton);
-              titleCell.insertBefore(container, titleCell.firstChild);
-              console.log('메모 아이콘과 신고 버튼 추가됨');
-            }
-          }
-        }
-      };
-    }
-  });
 }
 
 // MutationObserver를 사용하여 동적으로 추가되는 컨텍스트 메뉴 감지
@@ -374,53 +393,6 @@ function handleUserLinkClick(e) {
 // 이벤트 리스너 등록
 document.addEventListener('click', handleUserLinkClick);
 
-// 페이지 로드 시 메모가 있는 게시물 강조 표시
-document.addEventListener('DOMContentLoaded', () => {
-  console.log('DOMContentLoaded 이벤트 발생');
-  const transaction = db.transaction(['memos'], 'readonly');
-  const store = transaction.objectStore('memos');
-  const request = store.getAll();
-
-  request.onsuccess = (event) => {
-    event.target.result.forEach(memo => {
-      highlightUserPosts(memo.userId);
-    });
-  };
-});
-
-// DOM 변경 감지 시작
-observer.observe(document.body, {
-  childList: true,
-  subtree: true
-});
-
-// 페이지 로드 후 추가 이벤트 리스너 등록
-window.addEventListener('load', () => {
-  console.log('페이지 로드 완료');
-  // 게시물 목록에 있는 모든 사용자 링크에 이벤트 리스너 추가
-  const userLinks = document.querySelectorAll('span.author');
-  console.log('찾은 사용자 링크 수:', userLinks.length);
-  userLinks.forEach(link => {
-    link.addEventListener('click', handleUserLinkClick);
-  });
-});
-
-// 모든 메모를 체크하고 표시하는 함수
-function checkAllMemos() {
-  console.log('모든 메모 체크 시작');
-  const transaction = db.transaction(['memos'], 'readonly');
-  const store = transaction.objectStore('memos');
-  const request = store.getAll();
-
-  request.onsuccess = (event) => {
-    const memos = event.target.result;
-    console.log('찾은 메모:', memos);
-    memos.forEach(memo => {
-      highlightUserPosts(memo.userId);
-    });
-  };
-}
-
 // 페이지 변경을 감지하는 함수
 function observePageChanges() {
   const boardlist = document.getElementById('boardlist');
@@ -441,8 +413,103 @@ function observePageChanges() {
   }
 }
 
-// 페이지 로드 시 옵저버 설정
-document.addEventListener('DOMContentLoaded', () => {
-  console.log('DOMContentLoaded 이벤트 발생');
-  observePageChanges();
+// 페이지 로드 후 추가 이벤트 리스너 등록
+window.addEventListener('load', () => {
+  console.log('페이지 로드 완료');
+  checkAllMemos();
+  
+  // 게시물 목록에 있는 모든 사용자 링크에 이벤트 리스너 추가
+  const userLinks = document.querySelectorAll('span.author');
+  console.log('찾은 사용자 링크 수:', userLinks.length);
+  userLinks.forEach(link => {
+    link.addEventListener('click', handleUserLinkClick);
+  });
+});
+
+// 메시지 리스너 추가
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (request.action === 'refreshMemos') {
+    console.log('메모 갱신 요청 받음:', request.userId);
+    
+    // 해당 사용자의 게시물 강조 표시 제거
+    const posts = document.querySelectorAll('#boardlist > tbody > tr');
+    const currentUrl = window.location.href;
+    
+    posts.forEach(post => {
+      const userLink = post.querySelector('span.author');
+      if (userLink) {
+        const onclick = userLink.getAttribute('onclick');
+        if (onclick) {
+          const match = onclick.match(/submenu_show\('([^']+)','([^']+)'\)/);
+          if (match && match[1] === request.userId) {
+            console.log('게시물 강조 표시 제거:', post);
+            post.classList.remove('memo-highlight');
+            
+            // 메모 아이콘과 신고 아이콘 제거
+            const memoContainer = post.querySelector('.memo-container');
+            if (memoContainer) {
+              memoContainer.remove();
+            }
+            
+            // 취소선 제거
+            const titleCell = post.querySelector('td:nth-child(2)');
+            if (titleCell) {
+              titleCell.classList.remove('has-memo-title');
+              const memoIndicator = titleCell.querySelector('.memo-indicator');
+              if (memoIndicator) {
+                memoIndicator.remove();
+              }
+              const reportButton = titleCell.querySelector('.report-button');
+              if (reportButton) {
+                reportButton.remove();
+              }
+            }
+          }
+        }
+      }
+    });
+    
+    // 게시물 목록 다시 검사
+    chrome.storage.local.get('memos', (result) => {
+      const memos = result.memos || {};
+      if (!memos[request.userId]) {
+        // 메모가 삭제된 경우 해당 사용자의 게시물 강조 표시 제거
+        posts.forEach(post => {
+          const userLink = post.querySelector('span.author');
+          if (userLink) {
+            const onclick = userLink.getAttribute('onclick');
+            if (onclick) {
+              const match = onclick.match(/submenu_show\('([^']+)','([^']+)'\)/);
+              if (match && match[1] === request.userId) {
+                post.classList.remove('memo-highlight');
+                
+                // 메모 아이콘과 신고 아이콘 제거
+                const memoContainer = post.querySelector('.memo-container');
+                if (memoContainer) {
+                  memoContainer.remove();
+                }
+                
+                // 취소선 제거
+                const titleCell = post.querySelector('td:nth-child(2)');
+                if (titleCell) {
+                  titleCell.classList.remove('has-memo-title');
+                  const memoIndicator = titleCell.querySelector('.memo-indicator');
+                  if (memoIndicator) {
+                    memoIndicator.remove();
+                  }
+                  const reportButton = titleCell.querySelector('.report-button');
+                  if (reportButton) {
+                    reportButton.remove();
+                  }
+                }
+              }
+            }
+          }
+        });
+      } else {
+        // 메모가 있는 경우 강조 표시
+        highlightUserPosts(request.userId);
+      }
+    });
+  }
 }); 
