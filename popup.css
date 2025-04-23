@@ -3,6 +3,8 @@ body {
   margin: 0;
   padding: 10px;
   font-family: Arial, sans-serif;
+  max-height: 400px;
+  overflow-y: auto;
 }
 
 .container {
@@ -13,10 +15,15 @@ h2 {
   margin: 0 0 10px 0;
   font-size: 16px;
   color: #333;
+  position: sticky;
+  top: 0;
+  background-color: white;
+  padding: 5px 0;
+  z-index: 1;
 }
 
 .memo-list {
-  max-height: 400px;
+  max-height: 300px;
   overflow-y: auto;
 }
 
@@ -26,6 +33,15 @@ h2 {
   padding: 8px;
   margin-bottom: 8px;
   background-color: #fff;
+}
+
+.memo-item[data-type="recommend"] {
+  border-color: #4CAF50;
+}
+
+.memo-item[data-type="block"],
+.memo-item:not([data-type]) {
+  border-color: #ff4444;
 }
 
 .memo-header {

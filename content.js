@@ -1,6 +1,6 @@
 // 사용자 메모를 저장할 chrome.storage.local 사용
-function saveMemo(userId, userName, memo) {
-  console.log('메모 저장 시도:', userId, userName, memo);
+function saveMemo(userId, userName, memo, memoType) {
+  console.log('메모 저장 시도:', userId, userName, memo, memoType);
   
   chrome.storage.local.get('memos', (result) => {
     const memos = result.memos || {};
@@ -14,12 +14,14 @@ function saveMemo(userId, userName, memo) {
       
       memos[userId] = {
         nickname: userName,
-        memo: currentMemo.memo + nameChangeHistory
+        memo: currentMemo.memo + nameChangeHistory,
+        type: memoType
       };
     } else {
       memos[userId] = {
         nickname: userName,
-        memo: memo
+        memo: memo,
+        type: memoType
       };
     }
     
@@ -37,6 +39,16 @@ function showMemoModal(userId, userName) {
   modal.innerHTML = `
     <div class="memo-modal-content">
       <h3>${userName}님의 메모</h3>
+      <div class="memo-type">
+        <label>
+          <input type="radio" name="memoType" value="recommend" checked>
+          추천
+        </label>
+        <label>
+          <input type="radio" name="memoType" value="block">
+          차단
+        </label>
+      </div>
       <textarea id="memoText" placeholder="메모를 입력하세요"></textarea>
       <div class="memo-buttons">
         <button id="saveMemo">저장</button>
@@ -52,13 +64,16 @@ function showMemoModal(userId, userName) {
     const memos = result.memos || {};
     if (memos[userId]) {
       document.getElementById('memoText').value = memos[userId].memo;
+      const memoType = memos[userId].type || 'recommend';
+      document.querySelector(`input[name="memoType"][value="${memoType}"]`).checked = true;
     }
   });
 
   // 저장 버튼 이벤트
   document.getElementById('saveMemo').onclick = () => {
     const memo = document.getElementById('memoText').value;
-    saveMemo(userId, userName, memo);
+    const memoType = document.querySelector('input[name="memoType"]:checked').value;
+    saveMemo(userId, userName, memo, memoType);
     document.body.removeChild(modal);
   };
 
@@ -118,20 +133,32 @@ function highlightUserPosts(userId) {
               }
               
               if (titleCell) {
-                titleCell.classList.add('has-memo-title');
+                // 기존 클래스 제거
+                titleCell.classList.remove('has-memo-title', 'blocked-title', 'recommended-title');
                 
-                if (!titleCell.querySelector('.memo-indicator')) {
+                // 메모 컨테이너 제거
+                const memoContainer = titleCell.querySelector('.memo-container');
+                if (memoContainer) {
+                  memoContainer.remove();
+                }
+                
+                // 새로운 클래스 추가
+                titleCell.classList.add('has-memo-title');
+                titleCell.classList.add(memoData.type === 'block' ? 'blocked-title' : 'recommended-title');
+                
+                if (!titleCell.querySelector('.memo-container')) {
                   const container = document.createElement('span');
+                  container.className = 'memo-container';
                   container.style.marginRight = '5px';
 
                   const memoIndicator = document.createElement('span');
                   memoIndicator.className = 'memo-indicator';
                   memoIndicator.innerHTML = `📝 <span class="memo-tooltip">${memoData.memo}</span>`;
                   
-                  const reportButton = document.createElement('span');
-                  reportButton.className = 'report-button';
-                  reportButton.innerHTML = '🚨';
-                  reportButton.onclick = (e) => {
+                  const actionButton = document.createElement('span');
+                  actionButton.className = memoData.type === 'block' ? 'report-button' : 'recommend-button';
+                  actionButton.innerHTML = memoData.type === 'block' ? '🚨' : '👍';
+                  actionButton.onclick = (e) => {
                     e.preventDefault();
                     e.stopPropagation();
                     
@@ -142,13 +169,18 @@ function highlightUserPosts(userId) {
                     }
                     
                     if (number && sbj && nic) {
-                      const url = `/board/bulletin/report_info.php?gubun=본문&code=strange&number=${number}&title=${encodeURIComponent(sbj)}&nic=${encodeURIComponent(nic)}`;
-                      window.open(url, '', 'width=525,height=575');
+                      if (memoData.type === 'block') {
+                        const url = `/board/bulletin/report_info.php?gubun=본문&code=strange&number=${number}&title=${encodeURIComponent(sbj)}&nic=${encodeURIComponent(nic)}`;
+                        window.open(url, '', 'width=525,height=575');
+                      } else {
+                        // 추천 기능 구현
+                        console.log('추천 기능 구현 필요');
+                      }
                     }
                   };
 
                   container.appendChild(memoIndicator);
-                  container.appendChild(reportButton);
+                  container.appendChild(actionButton);
                   titleCell.insertBefore(container, titleCell.firstChild);
                 }
               }
@@ -219,21 +251,48 @@ style.textContent = `
   .memo-indicator:hover .memo-tooltip {
     display: block;
   }
-  .has-memo-title a {
+  .blocked-title a {
+    color: #ff4444 !important;
     text-decoration: line-through !important;
   }
-  .has-memo-title strong{
+  .blocked-title strong {
+    color: #ff4444 !important;
     text-decoration: line-through !important;
+  }
+  .recommended-title a {
+    color: #4CAF50 !important;
+    font-weight: bold !important;
+  }
+  .recommended-title strong {
+    color: #4CAF50 !important;
+    font-weight: bold !important;
   }
   .report-button {
     display: inline-block;
     margin-right: 5px;
     cursor: pointer;
-    color: #ff0000;
+    color: #ff4444;
     font-size: 14px;
   }
-  .report-button:hover {
+  .recommend-button {
+    display: inline-block;
+    margin-right: 5px;
+    cursor: pointer;
+    color: #4CAF50;
+    font-size: 14px;
+  }
+  .report-button:hover, .recommend-button:hover {
     opacity: 0.8;
+  }
+  .memo-type {
+    margin-bottom: 10px;
+  }
+  .memo-type label {
+    margin-right: 15px;
+    cursor: pointer;
+  }
+  .memo-type input[type="radio"] {
+    margin-right: 5px;
   }
 `;
 document.head.appendChild(style);
@@ -443,25 +502,33 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           const match = onclick.match(/submenu_show\('([^']+)','([^']+)'\)/);
           if (match && match[1] === request.userId) {
             console.log('게시물 강조 표시 제거:', post);
+            
+            // 모든 관련 클래스 제거
             post.classList.remove('memo-highlight');
-            
-            // 메모 아이콘과 신고 아이콘 제거
-            const memoContainer = post.querySelector('.memo-container');
-            if (memoContainer) {
-              memoContainer.remove();
-            }
-            
-            // 취소선 제거
             const titleCell = post.querySelector('td:nth-child(2)');
             if (titleCell) {
-              titleCell.classList.remove('has-memo-title');
-              const memoIndicator = titleCell.querySelector('.memo-indicator');
-              if (memoIndicator) {
-                memoIndicator.remove();
+              titleCell.classList.remove('has-memo-title', 'blocked-title', 'recommended-title');
+              
+              // 메모 컨테이너 제거
+              const memoContainer = titleCell.querySelector('.memo-container');
+              if (memoContainer) {
+                memoContainer.remove();
               }
-              const reportButton = titleCell.querySelector('.report-button');
-              if (reportButton) {
-                reportButton.remove();
+              
+              // 제목 링크 스타일 초기화
+              const titleLink = titleCell.querySelector('a');
+              if (titleLink) {
+                titleLink.style.color = '';
+                titleLink.style.textDecoration = '';
+                titleLink.style.fontWeight = '';
+              }
+              
+              // 제목 strong 태그 스타일 초기화
+              const titleStrong = titleCell.querySelector('strong');
+              if (titleStrong) {
+                titleStrong.style.color = '';
+                titleStrong.style.textDecoration = '';
+                titleStrong.style.fontWeight = '';
               }
             }
           }
@@ -483,23 +550,31 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
               if (match && match[1] === request.userId) {
                 post.classList.remove('memo-highlight');
                 
-                // 메모 아이콘과 신고 아이콘 제거
-                const memoContainer = post.querySelector('.memo-container');
-                if (memoContainer) {
-                  memoContainer.remove();
-                }
-                
-                // 취소선 제거
+                // 모든 관련 클래스 제거
                 const titleCell = post.querySelector('td:nth-child(2)');
                 if (titleCell) {
-                  titleCell.classList.remove('has-memo-title');
-                  const memoIndicator = titleCell.querySelector('.memo-indicator');
-                  if (memoIndicator) {
-                    memoIndicator.remove();
+                  titleCell.classList.remove('has-memo-title', 'blocked-title', 'recommended-title');
+                  
+                  // 메모 컨테이너 제거
+                  const memoContainer = titleCell.querySelector('.memo-container');
+                  if (memoContainer) {
+                    memoContainer.remove();
                   }
-                  const reportButton = titleCell.querySelector('.report-button');
-                  if (reportButton) {
-                    reportButton.remove();
+                  
+                  // 제목 링크 스타일 초기화
+                  const titleLink = titleCell.querySelector('a');
+                  if (titleLink) {
+                    titleLink.style.color = '';
+                    titleLink.style.textDecoration = '';
+                    titleLink.style.fontWeight = '';
+                  }
+                  
+                  // 제목 strong 태그 스타일 초기화
+                  const titleStrong = titleCell.querySelector('strong');
+                  if (titleStrong) {
+                    titleStrong.style.color = '';
+                    titleStrong.style.textDecoration = '';
+                    titleStrong.style.fontWeight = '';
                   }
                 }
               }

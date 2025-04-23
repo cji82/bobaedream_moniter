@@ -17,6 +17,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const memoItem = document.createElement('div');
         memoItem.className = 'memo-item';
         memoItem.setAttribute('data-user-id', userId);
+        memoItem.setAttribute('data-type', memoData.type || 'block');
         
         memoItem.innerHTML = `
           <div class="memo-header">
