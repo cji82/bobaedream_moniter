@@ -101,16 +101,18 @@ function highlightUserPosts(userId) {
           if (onclick) {
             const match = onclick.match(/submenu_show\('([^']+)','([^']+)'\)/);
             if (match && match[1] === userId) {
-              let titleCell, number, sbj, nic;
+              let titleCell, number, sbj, nic,ct;
               
               if (currentUrl.includes('view?code=best')) {
                 number = post.querySelector('td:nth-child(1)')?.textContent?.trim();
                 titleCell = post.querySelector('td:nth-child(3)');
                 nic = post.querySelector('td:nth-child(4) span.author')?.textContent?.trim();
+                ct = post.querySelector('td.count')?.textContent?.trim();
               } else if (currentUrl.includes('view?code=strange')) {
                 number = post.querySelector('td:nth-child(1)')?.textContent?.trim();
                 titleCell = post.querySelector('td:nth-child(2)');
                 nic = post.querySelector('td:nth-child(3) span.author')?.textContent?.trim();
+                ct = post.querySelector('td.count')?.textContent?.trim();
               } else if (currentUrl.includes('list?code=best')) {
                 titleCell = post.querySelector('td:nth-child(2)');
                 nic = post.querySelector('td:nth-child(3) span.author')?.textContent?.trim();
@@ -122,14 +124,17 @@ function highlightUserPosts(userId) {
                     number = match[1];
                   }
                 }
+                ct = post.querySelector('td.count')?.textContent?.trim();
               } else if (currentUrl.includes('list?code=strange')) {
                 number = post.querySelector('td:nth-child(1)')?.textContent?.trim();
                 titleCell = post.querySelector('td:nth-child(2)');
                 nic = post.querySelector('td:nth-child(3) span.author')?.textContent?.trim();
+                ct = post.querySelector('td.count')?.textContent?.trim();
               } else {
                 number = post.querySelector('td:nth-child(1)')?.textContent?.trim();
                 titleCell = post.querySelector('td:nth-child(2)');
                 nic = post.querySelector('td:nth-child(3) span.author')?.textContent?.trim();
+                ct = post.querySelector('td.count')?.textContent?.trim();
               }
               
               if (titleCell) {
@@ -174,7 +179,99 @@ function highlightUserPosts(userId) {
                         window.open(url, '', 'width=525,height=575');
                       } else {
                         // 추천 기능 구현
-                        console.log('추천 기능 구현 필요');
+                        const jsonOutput = {};
+                        const searchParams = new URLSearchParams(location.href.split("?")[1]);
+                        for(const [key,value] of searchParams){
+                            const allValues = searchParams.getAll(key);
+                            if (allValues.length > 1) {
+                                jsonOutput[key] = allValues;
+                            } else {
+                                jsonOutput[key] = value;
+                           }    
+                        }                        
+                        // Assume jsonOutput, number, ct, strPublic, strMsg2, login_go are defined in the scope
+
+                        // Prepare the data for a POST request.
+                        // jQuery's data object with type: "post" typically sends data as
+                        // application/x-www-form-urlencoded. We can use URLSearchParams for this.
+                        const postData = new URLSearchParams();
+                        postData.append("code", jsonOutput.code);
+                        postData.append("No", number);
+                        postData.append("score", 1);
+                        postData.append("public", 'Public');
+                        postData.append("count", ct);
+
+                        // beforeSend equivalent: code before the fetch call
+                        // (no specific beforeSend function in fetch, just put logic here)
+                        // console.log("Sending fetch request..."); // Example beforeSend logic
+
+                        fetch("/mobile/proc/set_recommand.php", {
+                            method: "POST", // Same as jQuery type:"post"
+                            headers: {
+                                // Important: set the Content-Type header for form data
+                                "Content-Type": "application/x-www-form-urlencoded",
+                                // You might need other headers if your server expects them,
+                                // such as 'X-Requested-With': 'XMLHttpRequest' if the server checks for it,
+                                // but usually not necessary for simple forms.
+                            },
+                            body: postData, // The data to be sent in the request body
+                        })
+                        .then(response => {
+                            // In fetch, non-2xx HTTP status codes do NOT throw an error.
+                            // We need to check the response.ok property (true for 2xx status codes)
+                            // or check response.status manually.
+                            if (!response.ok) {
+                                // If response is not OK (e.g., 404, 500), throw an error to go to the catch block
+                                throw new Error(`HTTP error! status: ${response.status}`);
+                            }
+                            // Request was successful (status is 2xx), now get the response data as text
+                            return response.text(); // Same as jQuery dataType: "text"
+                        })
+                        .then(data => {
+                            // success equivalent: handle the response data here
+                            // The logic from your jQuery success function goes here
+                            let rescd = data.substring(0, 2);
+
+                            if (rescd == '10') {
+                                window.alert('게시판 정보가 없습니다.');
+                            } else if (rescd == '12') {
+                                window.alert('로그인 후 이용해 주세요.');
+                                login_go();
+                                // return; // No need to return here in async promise chain
+                            } else if (rescd == '20') {
+                                window.alert('자신의 글을 추천 할 수 없습니다.');
+                            } else if (rescd == '30') {
+                                window.alert('이미 추천을 하였습니다.');
+                            } else if (rescd == "31") {
+                                window.alert('이미 반대를 하였습니다.');
+                            } else if (rescd == "32") {
+                                window.alert('이미 중복을 하였습니다.');
+                            } else if (rescd == '66') {
+                                window.alert('불량회원으로 지정되어서 추천하기 권한이 제한되었습니다.\n관리자에게 문의하시기 바랍니다.');
+                            } else if (rescd == "90") {
+                                // Assuming $ is jQuery is available and #temp... elements exist
+                                $("#temp" + strPublic).text(data.substring(2));
+                            } else if (rescd == "95") {
+                                window.alert('커뮤니티 글쓰기 인증된 회원만 ' + strMsg2 + ' 가능합니다.');
+                            } else if (rescd == '99') {
+                                // Assuming $ is jQuery is available and #temp... elements exist
+                                $("#temp" + strPublic).text(data.substring(2));
+                            } else {
+                                window.alert('추천 완료.');// Handle other cases
+                            }
+
+                            // return; // No need to return here in async promise chain
+                        })
+                        .catch(error => {
+                            // error equivalent: handle network errors or errors thrown in the then block
+                            console.error('Fetch error:', error);
+                            // The original error function was empty, but you could add logic here
+                        })
+                        .finally(() => {
+                            // complete equivalent: runs after the fetch is complete, regardless of success or error
+                            // console.log("Fetch request complete."); // Example complete logic
+                            // The original complete function was empty, so nothing specific is needed unless you want to add something
+                        });                        
                       }
                     }
                   };
@@ -254,6 +351,8 @@ style.textContent = `
   .blocked-title a {
     color: #ff4444 !important;
     text-decoration: line-through !important;
+    pointer-events: none !important;
+    cursor: default !important;
   }
   .blocked-title strong {
     color: #ff4444 !important;
@@ -293,6 +392,25 @@ style.textContent = `
   }
   .memo-type input[type="radio"] {
     margin-right: 5px;
+  }
+  .blocked-comment {
+    display: none;
+    background-color: #fff5f5;
+    padding: 10px;
+    margin: 5px 0;
+    border-radius: 4px;
+  }
+  .show-blocked-comments {
+    display: block;
+    text-align: center;
+    margin: 10px 0;
+    padding: 5px;
+    background-color: #f0f0f0;
+    cursor: pointer;
+    border-radius: 4px;
+  }
+  .show-blocked-comments:hover {
+    background-color: #e0e0e0;
   }
 `;
 document.head.appendChild(style);
@@ -587,4 +705,74 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       }
     });
   }
-}); 
+});
+
+// 댓글 처리 함수
+function processComments() {
+  const commentList = document.getElementById('cmt_reply');
+  if (!commentList) return;
+
+  const comments = commentList.querySelectorAll('li');
+  let hasBlockedComments = false;
+
+  comments.forEach(comment => {
+    const userSpan = comment.querySelector('span[submenu_level]');
+    if (!userSpan) return;
+
+    const userId = userSpan.getAttribute('submenu_level');
+    const commentContent = comment.querySelector('dd');
+    if (!commentContent) return;
+
+    chrome.storage.local.get('memos', (result) => {
+      const memos = result.memos || {};
+      const memoData = memos[userId];
+
+      if (memoData && memoData.type === 'block') {
+        hasBlockedComments = true;
+        comment.classList.add('blocked-comment');
+      }
+    });
+  });
+
+  // 차단된 댓글이 있으면 "차단된 글 보기" 버튼 추가
+  if (hasBlockedComments) {
+    const showButton = document.createElement('div');
+    showButton.className = 'show-blocked-comments';
+    showButton.textContent = '차단된 댓글 보기';
+    showButton.onclick = () => {
+      const blockedComments = commentList.querySelectorAll('.blocked-comment');
+      blockedComments.forEach(comment => {
+        comment.style.display = comment.style.display === 'none' ? 'block' : 'none';
+      });
+      showButton.textContent = showButton.textContent === '차단된 댓글 보기' ? '차단된 댓글 숨기기' : '차단된 댓글 보기';
+    };
+    commentList.insertBefore(showButton, commentList.firstChild);
+  }
+}
+
+// 페이지 로드 시 댓글 처리
+document.addEventListener('DOMContentLoaded', () => {
+  if (window.location.href.includes('view')) {
+    processComments();
+  }
+});
+
+// 댓글이 동적으로 추가될 때도 처리
+const commentObserver = new MutationObserver((mutations) => {
+  mutations.forEach((mutation) => {
+    if (mutation.addedNodes.length) {
+      if (window.location.href.includes('view')) {
+        processComments();
+      }
+    }
+  });
+});
+
+// 댓글 목록 감시 시작
+const commentList = document.getElementById('cmt_reply');
+if (commentList) {
+  commentObserver.observe(commentList, {
+    childList: true,
+    subtree: true
+  });
+} 

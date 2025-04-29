@@ -16,7 +16,7 @@
   },
   "content_scripts": [
     {
-      "matches": ["https://www.bobaedream.co.kr/*"],
+      "matches": ["https://*.bobaedream.co.kr/*"],
       "js": ["content.js"],
       "css": ["styles.css"]
     }
