@@ -1,6 +1,6 @@
 // 사용자 메모를 저장할 chrome.storage.local 사용
-function saveMemo(userId, userName, memo, memoType) {
-  console.log('메모 저장 시도:', userId, userName, memo, memoType);
+function saveMemo(userId, userName, memo, memoType, blockType) {
+  console.log('메모 저장 시도:', userId, userName, memo, memoType, blockType);
   
   chrome.storage.local.get('memos', (result) => {
     const memos = result.memos || {};
@@ -15,13 +15,15 @@ function saveMemo(userId, userName, memo, memoType) {
       memos[userId] = {
         nickname: userName,
         memo: currentMemo.memo + nameChangeHistory,
-        type: memoType
+        type: memoType,
+        blockType: blockType
       };
     } else {
       memos[userId] = {
         nickname: userName,
         memo: memo,
-        type: memoType
+        type: memoType,
+        blockType: blockType
       };
     }
     
@@ -49,6 +51,16 @@ function showMemoModal(userId, userName) {
           차단
         </label>
       </div>
+      <div class="block-options" style="display: none;">
+        <label>
+          <input type="radio" name="blockType" value="hide" checked>
+          게시물 숨기기
+        </label>
+        <label>
+          <input type="radio" name="blockType" value="strike">
+          취소선으로 표시
+        </label>
+      </div>
       <textarea id="memoText" placeholder="메모를 입력하세요"></textarea>
       <div class="memo-buttons">
         <button id="saveMemo">저장</button>
@@ -66,14 +78,31 @@ function showMemoModal(userId, userName) {
       document.getElementById('memoText').value = memos[userId].memo;
       const memoType = memos[userId].type || 'recommend';
       document.querySelector(`input[name="memoType"][value="${memoType}"]`).checked = true;
+      
+      if (memoType === 'block') {
+        document.querySelector('.block-options').style.display = 'block';
+        const blockType = memos[userId].blockType || 'hide';
+        document.querySelector(`input[name="blockType"][value="${blockType}"]`).checked = true;
+      }
     }
+  });
+
+  // 차단 옵션 토글
+  const memoTypeInputs = modal.querySelectorAll('input[name="memoType"]');
+  memoTypeInputs.forEach(input => {
+    input.addEventListener('change', () => {
+      const blockOptions = modal.querySelector('.block-options');
+      blockOptions.style.display = input.value === 'block' ? 'block' : 'none';
+    });
   });
 
   // 저장 버튼 이벤트
   document.getElementById('saveMemo').onclick = () => {
     const memo = document.getElementById('memoText').value;
     const memoType = document.querySelector('input[name="memoType"]:checked').value;
-    saveMemo(userId, userName, memo, memoType);
+    const blockType = memoType === 'block' ? document.querySelector('input[name="blockType"]:checked').value : null;
+    
+    saveMemo(userId, userName, memo, memoType, blockType);
     document.body.removeChild(modal);
   };
 
@@ -101,7 +130,7 @@ function highlightUserPosts(userId) {
           if (onclick) {
             const match = onclick.match(/submenu_show\('([^']+)','([^']+)'\)/);
             if (match && match[1] === userId) {
-              let titleCell, number, sbj, nic,ct;
+              let titleCell, number, sbj, nic, ct;
               
               if (currentUrl.includes('view?code=best')) {
                 number = post.querySelector('td:nth-child(1)')?.textContent?.trim();
@@ -139,7 +168,7 @@ function highlightUserPosts(userId) {
               
               if (titleCell) {
                 // 기존 클래스 제거
-                titleCell.classList.remove('has-memo-title', 'blocked-title', 'recommended-title');
+                titleCell.classList.remove('has-memo-title', 'blocked-title', 'recommended-title', 'hidden-post');
                 
                 // 메모 컨테이너 제거
                 const memoContainer = titleCell.querySelector('.memo-container');
@@ -147,9 +176,18 @@ function highlightUserPosts(userId) {
                   memoContainer.remove();
                 }
                 
+                if (memoData.type === 'block' && memoData.blockType === 'hide') {
+                  post.classList.add('hidden-post');
+                  return;
+                }
+                
                 // 새로운 클래스 추가
                 titleCell.classList.add('has-memo-title');
-                titleCell.classList.add(memoData.type === 'block' ? 'blocked-title' : 'recommended-title');
+                if (memoData.type === 'block') {
+                  titleCell.classList.add('blocked-title');
+                } else {
+                  titleCell.classList.add('recommended-title');
+                }
                 
                 if (!titleCell.querySelector('.memo-container')) {
                   const container = document.createElement('span');
@@ -187,7 +225,7 @@ function highlightUserPosts(userId) {
                                 jsonOutput[key] = allValues;
                             } else {
                                 jsonOutput[key] = value;
-                           }    
+                            }    
                         }                        
                         // Assume jsonOutput, number, ct, strPublic, strMsg2, login_go are defined in the scope
 
@@ -271,7 +309,7 @@ function highlightUserPosts(userId) {
                             // complete equivalent: runs after the fetch is complete, regardless of success or error
                             // console.log("Fetch request complete."); // Example complete logic
                             // The original complete function was empty, so nothing specific is needed unless you want to add something
-                        });                        
+                        });
                       }
                     }
                   };
@@ -411,6 +449,20 @@ style.textContent = `
   }
   .show-blocked-comments:hover {
     background-color: #e0e0e0;
+  }
+  .hidden-post {
+    display: none !important;
+  }
+  .block-options {
+    margin: 10px 0;
+  }
+  .block-options label {
+    display: block;
+    margin: 5px 0;
+    cursor: pointer;
+  }
+  .block-options input[type="radio"] {
+    margin-right: 5px;
   }
 `;
 document.head.appendChild(style);

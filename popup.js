@@ -57,20 +57,53 @@ document.addEventListener('DOMContentLoaded', () => {
           memoDetail.classList.add('show');
           memoContent.style.display = 'none';
           toggleBtn.textContent = '-';
+          
+          // 차단 사용자인 경우에만 표시 방법 선택 옵션 추가
+          if (memoData.type === 'block') {
+            const blockOptions = document.createElement('div');
+            blockOptions.className = 'block-options';
+            blockOptions.innerHTML = `
+              <label>
+                <input type="radio" name="blockType" value="hide" ${memoData.blockType === 'hide' ? 'checked' : ''}>
+                게시물 숨기기
+              </label>
+              <label>
+                <input type="radio" name="blockType" value="strike" ${memoData.blockType === 'strike' ? 'checked' : ''}>
+                취소선으로 표시
+              </label>
+            `;
+            memoDetail.insertBefore(blockOptions, memoDetail.querySelector('.memo-detail-buttons'));
+          }
         });
         
         // 저장 버튼
         const saveBtn = memoItem.querySelector('.save-btn');
         saveBtn.addEventListener('click', () => {
           const newMemo = memoItem.querySelector('textarea').value;
+          const blockType = memoData.type === 'block' ? 
+            memoItem.querySelector('input[name="blockType"]:checked')?.value || 'hide' : null;
+          
           chrome.storage.local.get('memos', (result) => {
             const memos = result.memos || {};
-            memos[userId].memo = newMemo;
+            memos[userId] = {
+              ...memos[userId],
+              memo: newMemo,
+              blockType: blockType
+            };
+            
             chrome.storage.local.set({ memos }, () => {
               memoContent.textContent = newMemo;
               memoDetail.classList.remove('show');
               memoContent.style.display = 'block';
               toggleBtn.textContent = '+';
+              
+              // content.js에 메모 갱신 메시지 전송
+              chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+                chrome.tabs.sendMessage(tabs[0].id, { 
+                  action: 'refreshMemos',
+                  userId: userId
+                });
+              });
             });
           });
         });
@@ -108,6 +141,87 @@ document.addEventListener('DOMContentLoaded', () => {
         });
       });
     });
+  }
+  
+  function showEditModal(memoData) {
+    const modal = document.createElement('div');
+    modal.className = 'memo-modal';
+    modal.innerHTML = `
+      <div class="memo-modal-content">
+        <h3>${memoData.nickname}님의 메모 수정</h3>
+        <div class="memo-type">
+          <label>
+            <input type="radio" name="memoType" value="recommend" ${memoData.type === 'recommend' ? 'checked' : ''}>
+            추천
+          </label>
+          <label>
+            <input type="radio" name="memoType" value="block" ${memoData.type === 'block' ? 'checked' : ''}>
+            차단
+          </label>
+        </div>
+        <div class="block-options" style="display: ${memoData.type === 'block' ? 'block' : 'none'}">
+          <label>
+            <input type="radio" name="blockType" value="hide" ${memoData.blockType === 'hide' ? 'checked' : ''}>
+            게시물 숨기기
+          </label>
+          <label>
+            <input type="radio" name="blockType" value="strike" ${memoData.blockType === 'strike' ? 'checked' : ''}>
+            취소선으로 표시
+          </label>
+        </div>
+        <textarea id="memoText">${memoData.memo}</textarea>
+        <div class="memo-buttons">
+          <button id="saveMemo">저장</button>
+          <button id="cancelMemo">취소</button>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(modal);
+
+    // 차단 옵션 토글
+    const memoTypeInputs = modal.querySelectorAll('input[name="memoType"]');
+    memoTypeInputs.forEach(input => {
+      input.addEventListener('change', () => {
+        const blockOptions = modal.querySelector('.block-options');
+        blockOptions.style.display = input.value === 'block' ? 'block' : 'none';
+      });
+    });
+
+    // 저장 버튼 이벤트
+    document.getElementById('saveMemo').onclick = () => {
+      const memo = document.getElementById('memoText').value;
+      const memoType = document.querySelector('input[name="memoType"]:checked').value;
+      const blockType = memoType === 'block' ? document.querySelector('input[name="blockType"]:checked').value : null;
+      
+      chrome.storage.local.get('memos', (result) => {
+        const memos = result.memos || {};
+        memos[memoData.userId] = {
+          nickname: memoData.nickname,
+          memo: memo,
+          type: memoType,
+          blockType: blockType
+        };
+        
+        chrome.storage.local.set({ memos }, () => {
+          document.body.removeChild(modal);
+          displayMemos();
+          
+          // content.js에 메모 갱신 메시지 전송
+          chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+            chrome.tabs.sendMessage(tabs[0].id, { 
+              action: 'refreshMemos',
+              userId: memoData.userId
+            });
+          });
+        });
+      });
+    };
+
+    // 취소 버튼 이벤트
+    document.getElementById('cancelMemo').onclick = () => {
+      document.body.removeChild(modal);
+    };
   }
   
   displayMemos();
