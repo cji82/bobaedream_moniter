@@ -60,19 +60,23 @@ document.addEventListener('DOMContentLoaded', () => {
           
           // 차단 사용자인 경우에만 표시 방법 선택 옵션 추가
           if (memoData.type === 'block') {
-            const blockOptions = document.createElement('div');
-            blockOptions.className = 'block-options';
-            blockOptions.innerHTML = `
-              <label>
-                <input type="radio" name="blockType" value="hide" ${memoData.blockType === 'hide' ? 'checked' : ''}>
-                게시물 숨기기
-              </label>
-              <label>
-                <input type="radio" name="blockType" value="strike" ${memoData.blockType === 'strike' ? 'checked' : ''}>
-                취소선으로 표시
-              </label>
-            `;
-            memoDetail.insertBefore(blockOptions, memoDetail.querySelector('.memo-detail-buttons'));
+            // 기존 block-options가 있는지 확인
+            let blockOptions = memoDetail.querySelector('.block-options');
+            if (!blockOptions) {
+              blockOptions = document.createElement('div');
+              blockOptions.className = 'block-options';
+              blockOptions.innerHTML = `
+                <label>
+                  <input type="radio" name="blockType" value="hide" ${memoData.blockType === 'hide' ? 'checked' : ''}>
+                  게시물 숨기기
+                </label>
+                <label>
+                  <input type="radio" name="blockType" value="strike" ${memoData.blockType === 'strike' ? 'checked' : ''}>
+                  취소선으로 표시
+                </label>
+              `;
+              memoDetail.insertBefore(blockOptions, memoDetail.querySelector('.memo-detail-buttons'));
+            }
           }
         });
         
@@ -99,10 +103,18 @@ document.addEventListener('DOMContentLoaded', () => {
               
               // content.js에 메모 갱신 메시지 전송
               chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-                chrome.tabs.sendMessage(tabs[0].id, { 
-                  action: 'refreshMemos',
-                  userId: userId
-                });
+                if (tabs[0]) {
+                  chrome.tabs.sendMessage(tabs[0].id, { 
+                    action: 'refreshMemos',
+                    userId: userId
+                  }, (response) => {
+                    if (chrome.runtime.lastError) {
+                      console.error('메시지 전송 실패:', chrome.runtime.lastError);
+                    } else {
+                      console.log('메시지 전송 성공:', response);
+                    }
+                  });
+                }
               });
             });
           });

@@ -30,6 +30,12 @@ function saveMemo(userId, userName, memo, memoType, blockType) {
     chrome.storage.local.set({ memos }, () => {
       console.log('메모 저장 완료:', memos);
       highlightUserPosts(userId);
+      
+      // 메모 저장 후 메시지 전송
+      chrome.runtime.sendMessage({
+        action: 'refreshMemos',
+        userId: userId
+      });
     });
   });
 }
@@ -168,7 +174,8 @@ function highlightUserPosts(userId) {
               
               if (titleCell) {
                 // 기존 클래스 제거
-                titleCell.classList.remove('has-memo-title', 'blocked-title', 'recommended-title', 'hidden-post');
+                titleCell.classList.remove('has-memo-title', 'blocked-title', 'recommended-title');
+                post.classList.remove('hidden-post');
                 
                 // 메모 컨테이너 제거
                 const memoContainer = titleCell.querySelector('.memo-container');
@@ -176,15 +183,14 @@ function highlightUserPosts(userId) {
                   memoContainer.remove();
                 }
                 
-                if (memoData.type === 'block' && memoData.blockType === 'hide') {
-                  post.classList.add('hidden-post');
-                  return;
-                }
-                
                 // 새로운 클래스 추가
                 titleCell.classList.add('has-memo-title');
                 if (memoData.type === 'block') {
                   titleCell.classList.add('blocked-title');
+                  if (memoData.blockType === 'hide') {
+                    post.classList.add('hidden-post');
+                    return;
+                  }
                 } else {
                   titleCell.classList.add('recommended-title');
                 }
@@ -332,6 +338,12 @@ document.addEventListener('DOMContentLoaded', () => {
   console.log('DOMContentLoaded 이벤트 발생');
   checkAllMemos();
   observePageChanges();
+  
+  // 뷰 페이지인 경우 댓글 처리
+  if (window.location.href.includes('view')) {
+    console.log('뷰 페이지 감지, 댓글 처리 시작');
+    debouncedProcessComments();
+  }
 });
 
 // 모든 메모를 체크하고 표시하는 함수
@@ -624,6 +636,9 @@ document.addEventListener('click', handleUserLinkClick);
 
 // 페이지 변경을 감지하는 함수
 function observePageChanges() {
+  console.log('페이지 변경 감지 시작');
+  
+  // 게시판 목록 변경 감지
   const boardlist = document.getElementById('boardlist');
   if (boardlist) {
     const observer = new MutationObserver((mutations) => {
@@ -640,7 +655,301 @@ function observePageChanges() {
       subtree: true
     });
   }
+
+  // URL 변경 감지
+  let lastUrl = location.href;
+  new MutationObserver(() => {
+    const currentUrl = location.href;
+    if (currentUrl !== lastUrl) {
+      lastUrl = currentUrl;
+      console.log('URL 변경 감지:', currentUrl);
+      
+      if (currentUrl.includes('view')) {
+        console.log('뷰 페이지로 변경, 댓글 처리 시작');
+        debouncedProcessComments();
+      }
+    }
+  }).observe(document, { subtree: true, childList: true });
 }
+
+// 댓글이 동적으로 추가될 때도 처리
+const commentObserver = new MutationObserver((mutations) => {
+  mutations.forEach((mutation) => {
+    if (mutation.addedNodes.length) {
+      if (window.location.href.includes('view')) {
+        console.log('댓글 추가 감지, 댓글 처리 시작');
+        debouncedProcessComments();
+      }
+    }
+  });
+});
+
+// 댓글 목록 감시 시작
+function startCommentObserver() {
+  console.log('댓글 감시 시작');
+  const commentList = document.getElementById('cmt_reply');
+  const bestCommentList = document.getElementById('best_cmt_reply');
+
+  [commentList, bestCommentList].forEach(list => {
+    if (list) {
+      console.log('댓글 목록 감시 설정:', list.id);
+      commentObserver.observe(list, {
+        childList: true,
+        subtree: true
+      });
+    }
+  });
+}
+
+// 디바운스 함수 추가
+function debounce(func, wait) {
+  let timeout;
+  return function executedFunction(...args) {
+    const later = () => {
+      clearTimeout(timeout);
+      func(...args);
+    };
+    clearTimeout(timeout);
+    timeout = setTimeout(later, wait);
+  };
+}
+
+// 댓글 처리 함수를 디바운스 처리
+const debouncedProcessComments = debounce(() => {
+  console.log('디바운스된 댓글 처리 시작');
+  processComments();
+}, 100);
+
+// 댓글 처리 함수
+async function processComments() {
+  // 이미 처리 중인지 확인
+  if (window.isProcessingComments) {
+    console.log('댓글 처리 중, 중복 호출 방지');
+    return;
+  }
+  
+  window.isProcessingComments = true;
+  console.log('댓글 처리 시작');
+  
+  const commentList = document.getElementById('cmt_reply');
+  const bestCommentList = document.getElementById('best_cmt_reply');
+  
+  if (!commentList && !bestCommentList) {
+    console.log('댓글 목록을 찾을 수 없음');
+    window.isProcessingComments = false;
+    return;
+  }
+
+  // 메모 데이터를 먼저 가져옴
+  const memos = await new Promise(resolve => {
+    chrome.storage.local.get('memos', (result) => {
+      resolve(result.memos || {});
+    });
+  });
+
+  // 일반 댓글과 베스트 댓글 모두 처리
+  const lists = [commentList, bestCommentList].filter(Boolean);
+  
+  for (const list of lists) {
+    const comments = list.querySelectorAll('li');
+    console.log('찾은 댓글 수:', comments.length);
+    
+    for (const comment of comments) {
+      // 이미 처리된 댓글인지 확인
+      if (comment.dataset.processed === 'true') continue;
+      
+      const userSpan = comment.querySelector('span.author');
+      if (!userSpan) continue;
+
+      const onclick = userSpan.getAttribute('onclick');
+      if (!onclick) continue;
+
+      const match = onclick.match(/submenu_show\('([^']+)','([^']+)'\)/);
+      if (!match) continue;
+
+      const userId = match[1];
+      const commentContent = comment.querySelector('dd');
+      if (!commentContent) continue;
+
+      const memoData = memos[userId];
+      
+      // 모든 댓글의 스타일 초기화
+      comment.style.removeProperty('display');
+      comment.classList.remove('blocked-comment');
+      userSpan.style.removeProperty('color');
+      userSpan.style.removeProperty('text-decoration');
+      
+      if (memoData && memoData.type === 'block') {
+        // 댓글에 차단 표시 추가
+        comment.classList.add('blocked-comment');
+        
+        if (memoData.blockType === 'hide') {
+          // 게시물 숨기기 옵션일 때는 전체 li를 숨김
+          comment.style.display = 'none';
+        } else {
+          // 취소선으로 표시 옵션일 때는 사용자 이름에 취소선 표시
+          userSpan.style.color = '#ff4444';
+          userSpan.style.textDecoration = 'line-through';
+          
+          // 기존 버튼이 있다면 제거
+          const existingButton = commentContent.querySelector('.show-blocked-comment');
+          if (existingButton) existingButton.remove();
+          
+          // 원본 댓글 내용 저장
+          const originalContent = commentContent.innerHTML;
+          
+          // 댓글 내용을 숨기고 버튼으로 대체
+          commentContent.innerHTML = `
+            <div class="show-blocked-comment">차단된 댓글 보기</div>
+            <div class="blocked-comment-content" style="display: none;">${originalContent}</div>
+          `;
+          
+          // 버튼 클릭 이벤트 추가
+          const showButton = commentContent.querySelector('.show-blocked-comment');
+          const contentDiv = commentContent.querySelector('.blocked-comment-content');
+          
+          showButton.onclick = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            
+            const isHidden = contentDiv.style.display === 'none';
+            contentDiv.style.display = isHidden ? 'block' : 'none';
+            showButton.textContent = isHidden ? '차단된 댓글 숨기기' : '차단된 댓글 보기';
+          };
+        }
+      } else {
+        // 차단 해제된 경우 원래 상태로 복원
+        const contentDiv = commentContent.querySelector('.blocked-comment-content');
+        if (contentDiv) {
+          commentContent.innerHTML = contentDiv.innerHTML;
+        }
+        commentContent.style.removeProperty('display');
+      }
+      
+      // 댓글 처리 완료 표시
+      comment.dataset.processed = 'true';
+    }
+  }
+  
+  console.log('댓글 처리 완료');
+  window.isProcessingComments = false;
+}
+
+// 댓글 스타일 추가
+const commentStyle = document.createElement('style');
+commentStyle.textContent = `
+  .blocked-comment {
+    background-color: #fff5f5;
+    padding: 10px;
+    margin: 5px 0;
+    border-radius: 4px;
+    border-left: 3px solid #ff4444;
+  }
+  .blocked-comment span.author {
+    color: #ff4444 !important;
+    text-decoration: line-through !important;
+  }
+  .show-blocked-comment {
+    display: inline-block;
+    margin: 5px 0;
+    padding: 5px 10px;
+    background-color: #f8f8f8;
+    cursor: pointer;
+    border-radius: 4px;
+    border: 1px solid #ddd;
+    color: #666;
+    font-size: 12px;
+  }
+  .show-blocked-comment:hover {
+    background-color: #f0f0f0;
+  }
+  .blocked-comment-content {
+    margin-top: 5px;
+  }
+`;
+document.head.appendChild(commentStyle);
+
+// 메시지 리스너
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  console.log('메시지 수신:', request);
+  
+  if (request.action === 'refreshMemos') {
+    console.log('메모 갱신 요청:', request.userId);
+    
+    // 해당 사용자의 게시물 강조 표시 갱신
+    chrome.storage.local.get('memos', (result) => {
+      const memos = result.memos || {};
+      const memoData = memos[request.userId];
+      
+      if (memoData) {
+        highlightUserPosts(request.userId);
+      } else {
+        // 메모가 삭제된 경우 해당 사용자의 게시물 강조 표시 제거
+        const posts = document.querySelectorAll('#boardlist > tbody > tr');
+        posts.forEach(post => {
+          const userLink = post.querySelector('span.author');
+          if (userLink) {
+            const onclick = userLink.getAttribute('onclick');
+            if (onclick) {
+              const match = onclick.match(/submenu_show\('([^']+)','([^']+)'\)/);
+              if (match && match[1] === request.userId) {
+                post.classList.remove('memo-highlight', 'hidden-post');
+                const titleCell = post.querySelector('td:nth-child(2)');
+                if (titleCell) {
+                  titleCell.classList.remove('has-memo-title', 'blocked-title', 'recommended-title');
+                  const memoContainer = titleCell.querySelector('.memo-container');
+                  if (memoContainer) {
+                    memoContainer.remove();
+                  }
+                }
+              }
+            }
+          }
+        });
+      }
+
+      // 댓글 처리도 갱신 (메모가 있든 없든 항상 실행)
+      if (window.location.href.includes('view')) {
+        console.log('뷰 페이지에서 댓글 갱신 시작');
+        
+        // 기존 차단된 댓글 표시 제거
+        const blockedComments = document.querySelectorAll('.blocked-comment');
+        blockedComments.forEach(comment => {
+          comment.classList.remove('blocked-comment');
+          const userSpan = comment.querySelector('span.author');
+          if (userSpan) {
+            userSpan.style.color = '';
+            userSpan.style.textDecoration = '';
+          }
+          const commentContent = comment.querySelector('dd');
+          if (commentContent) {
+            // 원래 내용 복원
+            const contentDiv = commentContent.querySelector('.blocked-comment-content');
+            if (contentDiv) {
+              commentContent.innerHTML = contentDiv.innerHTML;
+            }
+            commentContent.style.display = 'block';
+          }
+          // 처리 완료 표시 제거
+          comment.removeAttribute('data-processed');
+        });
+
+        // 댓글 목록 다시 처리
+        console.log('댓글 목록 재처리 시작');
+        // 처리 중 플래그 초기화
+        window.isProcessingComments = false;
+        // 디바운스된 댓글 처리 호출
+        debouncedProcessComments();
+      }
+      
+      // 응답 전송
+      sendResponse({ success: true });
+    });
+    
+    // 비동기 응답을 위해 true 반환
+    return true;
+  }
+});
 
 // 페이지 로드 후 추가 이벤트 리스너 등록
 window.addEventListener('load', () => {
@@ -653,178 +962,11 @@ window.addEventListener('load', () => {
   userLinks.forEach(link => {
     link.addEventListener('click', handleUserLinkClick);
   });
-});
 
-// 메시지 리스너 추가
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  if (request.action === 'refreshMemos') {
-    console.log('메모 갱신 요청 받음:', request.userId);
-    
-    // 해당 사용자의 게시물 강조 표시 제거
-    const posts = document.querySelectorAll('#boardlist > tbody > tr');
-    const currentUrl = window.location.href;
-    
-    posts.forEach(post => {
-      const userLink = post.querySelector('span.author');
-      if (userLink) {
-        const onclick = userLink.getAttribute('onclick');
-        if (onclick) {
-          const match = onclick.match(/submenu_show\('([^']+)','([^']+)'\)/);
-          if (match && match[1] === request.userId) {
-            console.log('게시물 강조 표시 제거:', post);
-            
-            // 모든 관련 클래스 제거
-            post.classList.remove('memo-highlight');
-            const titleCell = post.querySelector('td:nth-child(2)');
-            if (titleCell) {
-              titleCell.classList.remove('has-memo-title', 'blocked-title', 'recommended-title');
-              
-              // 메모 컨테이너 제거
-              const memoContainer = titleCell.querySelector('.memo-container');
-              if (memoContainer) {
-                memoContainer.remove();
-              }
-              
-              // 제목 링크 스타일 초기화
-              const titleLink = titleCell.querySelector('a');
-              if (titleLink) {
-                titleLink.style.color = '';
-                titleLink.style.textDecoration = '';
-                titleLink.style.fontWeight = '';
-              }
-              
-              // 제목 strong 태그 스타일 초기화
-              const titleStrong = titleCell.querySelector('strong');
-              if (titleStrong) {
-                titleStrong.style.color = '';
-                titleStrong.style.textDecoration = '';
-                titleStrong.style.fontWeight = '';
-              }
-            }
-          }
-        }
-      }
-    });
-    
-    // 게시물 목록 다시 검사
-    chrome.storage.local.get('memos', (result) => {
-      const memos = result.memos || {};
-      if (!memos[request.userId]) {
-        // 메모가 삭제된 경우 해당 사용자의 게시물 강조 표시 제거
-        posts.forEach(post => {
-          const userLink = post.querySelector('span.author');
-          if (userLink) {
-            const onclick = userLink.getAttribute('onclick');
-            if (onclick) {
-              const match = onclick.match(/submenu_show\('([^']+)','([^']+)'\)/);
-              if (match && match[1] === request.userId) {
-                post.classList.remove('memo-highlight');
-                
-                // 모든 관련 클래스 제거
-                const titleCell = post.querySelector('td:nth-child(2)');
-                if (titleCell) {
-                  titleCell.classList.remove('has-memo-title', 'blocked-title', 'recommended-title');
-                  
-                  // 메모 컨테이너 제거
-                  const memoContainer = titleCell.querySelector('.memo-container');
-                  if (memoContainer) {
-                    memoContainer.remove();
-                  }
-                  
-                  // 제목 링크 스타일 초기화
-                  const titleLink = titleCell.querySelector('a');
-                  if (titleLink) {
-                    titleLink.style.color = '';
-                    titleLink.style.textDecoration = '';
-                    titleLink.style.fontWeight = '';
-                  }
-                  
-                  // 제목 strong 태그 스타일 초기화
-                  const titleStrong = titleCell.querySelector('strong');
-                  if (titleStrong) {
-                    titleStrong.style.color = '';
-                    titleStrong.style.textDecoration = '';
-                    titleStrong.style.fontWeight = '';
-                  }
-                }
-              }
-            }
-          }
-        });
-      } else {
-        // 메모가 있는 경우 강조 표시
-        highlightUserPosts(request.userId);
-      }
-    });
-  }
-});
-
-// 댓글 처리 함수
-function processComments() {
-  const commentList = document.getElementById('cmt_reply');
-  if (!commentList) return;
-
-  const comments = commentList.querySelectorAll('li');
-  let hasBlockedComments = false;
-
-  comments.forEach(comment => {
-    const userSpan = comment.querySelector('span[submenu_level]');
-    if (!userSpan) return;
-
-    const userId = userSpan.getAttribute('submenu_level');
-    const commentContent = comment.querySelector('dd');
-    if (!commentContent) return;
-
-    chrome.storage.local.get('memos', (result) => {
-      const memos = result.memos || {};
-      const memoData = memos[userId];
-
-      if (memoData && memoData.type === 'block') {
-        hasBlockedComments = true;
-        comment.classList.add('blocked-comment');
-      }
-    });
-  });
-
-  // 차단된 댓글이 있으면 "차단된 글 보기" 버튼 추가
-  if (hasBlockedComments) {
-    const showButton = document.createElement('div');
-    showButton.className = 'show-blocked-comments';
-    showButton.textContent = '차단된 댓글 보기';
-    showButton.onclick = () => {
-      const blockedComments = commentList.querySelectorAll('.blocked-comment');
-      blockedComments.forEach(comment => {
-        comment.style.display = comment.style.display === 'none' ? 'block' : 'none';
-      });
-      showButton.textContent = showButton.textContent === '차단된 댓글 보기' ? '차단된 댓글 숨기기' : '차단된 댓글 보기';
-    };
-    commentList.insertBefore(showButton, commentList.firstChild);
-  }
-}
-
-// 페이지 로드 시 댓글 처리
-document.addEventListener('DOMContentLoaded', () => {
+  // 뷰 페이지인 경우 댓글 처리 및 감시 시작
   if (window.location.href.includes('view')) {
-    processComments();
+    console.log('뷰 페이지 감지, 댓글 처리 및 감시 시작');
+    debouncedProcessComments();
+    startCommentObserver();
   }
-});
-
-// 댓글이 동적으로 추가될 때도 처리
-const commentObserver = new MutationObserver((mutations) => {
-  mutations.forEach((mutation) => {
-    if (mutation.addedNodes.length) {
-      if (window.location.href.includes('view')) {
-        processComments();
-      }
-    }
-  });
-});
-
-// 댓글 목록 감시 시작
-const commentList = document.getElementById('cmt_reply');
-if (commentList) {
-  commentObserver.observe(commentList, {
-    childList: true,
-    subtree: true
-  });
-} 
+}); 
